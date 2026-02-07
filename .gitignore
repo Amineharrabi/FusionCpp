@@ -16,7 +16,6 @@ external/
 imgui-master/
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -37,3 +36,4 @@ Makefile
 
 # Dependencies (if building locally)
 external/*/build/
+  

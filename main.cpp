@@ -1,12 +1,39 @@
-
 #include <glad/glad.h>
 #include <glfw/glfw3.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-
 #include <vector>
+#include <cmath>
+
 #include "particle.h"
+#include "tokamak_geometry.h"
+#include "magnetic_field.h"
+#include "plasma_physics.h"
+
+std::string loadShaderSource(const char *path)
+{
+    std::ifstream file(path);
+    std::stringstream buf;
+    buf << file.rdbuf();
+    return buf.str();
+}
+
+GLuint compileShader(GLenum type, const char *src)
+{
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "Shader compile error: " << infoLog << std::endl;
+    }
+    return shader;
+}
 
 int main()
 {
@@ -21,7 +48,8 @@ int main()
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
-    GLFWwindow *window = glfwCreateWindow(800, 600, "Fusion Reactor Simulation", nullptr, nullptr);
+
+    GLFWwindow *window = glfwCreateWindow(1200, 800, "Tokamak Fusion Reactor Simulation", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -35,36 +63,14 @@ int main()
         return -1;
     }
 
-    // Define a particle and generate its circle vertices
-    Particle particle = {0.0f, 0.0f, 0.1f, 1.0f, 0.5f, 0.2f, 1.0f}; // Center in NDC space
-    std::vector<float> circleVertices = generateCircleVertices(particle.x, particle.y, particle.radius, 64);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
-    // --- Shader loading utility ---
-    auto loadShaderSource = [](const char *path) -> std::string
-    {
-        std::ifstream file(path);
-        std::stringstream buf;
-        buf << file.rdbuf();
-        return buf.str();
-    };
+    int windowWidth = 1200, windowHeight = 800;
+    glViewport(0, 0, windowWidth, windowHeight);
 
-    auto compileShader = [](GLenum type, const char *src) -> GLuint
-    {
-        GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &src, nullptr);
-        glCompileShader(shader);
-        GLint success;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success)
-        {
-            char infoLog[512];
-            glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-            std::cerr << "Shader compile error: " << infoLog << std::endl;
-        }
-        return shader;
-    };
-
-    // Load and compile shaders
     std::string vertSrc = loadShaderSource("particle.vert");
     std::string fragSrc = loadShaderSource("particle.frag");
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertSrc.c_str());
@@ -76,57 +82,123 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    std::cout << "\n============================================" << std::endl;
+    std::cout << "TOKAMAK FUSION REACTOR SIMULATION" << std::endl;
+    std::cout << "============================================\n" << std::endl;
+    
+    TokamakGeometry tokamak;
+    std::cout << "Tokamak geometry initialized:" << std::endl;
+    std::cout << "  Major radius: " << tokamak.majorRadius << " m (simulation units)" << std::endl;
+    std::cout << "  Minor radius: " << tokamak.minorRadius << " m" << std::endl;
+    std::cout << "  Plasma elongation: " << tokamak.plasmaElongation << std::endl;
+    std::cout << "  Triangularity: " << tokamak.plasmaTriangularity << std::endl;
+    
+    MagneticField magneticField(tokamak.majorRadius, tokamak.minorRadius, 8.0f);
+    std::cout << "\nMagnetic field configured:" << std::endl;
+    std::cout << "  Toroidal field: " << magneticField.B_toroidal << " T" << std::endl;
+    std::cout << "  Poloidal field: " << magneticField.B_poloidal << " T" << std::endl;
+    std::cout << "  Safety factor q: " << magneticField.safetyFactor << std::endl;
+    
+    PlasmaPhysics plasmaPhysics(magneticField, tokamak);
+    std::cout << "\nPlasma physics engine ready." << std::endl;
+    
+    int numDeuterium = 800;  
+    int numTritium = 200;
+    
+    std::vector<Particle> particles = plasmaPhysics.createThermalPlasma(numDeuterium, numTritium);
+    
+    std::cout << "\nInitial plasma created:" << std::endl;
+    std::cout << "  Deuterium ions: " << numDeuterium << std::endl;
+    std::cout << "  Tritium ions: " << numTritium << std::endl;
+    std::cout << "  Total particles: " << particles.size() << std::endl;
+    std::cout << "\nSimulation started" << std::endl;
+    
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, circleVertices.size() * sizeof(float), circleVertices.data(), GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
 
-    // Animation variables (optional, for moving the particle)
-    float speed = 2.0f; // Units per second in NDC space
     double lastTime = glfwGetTime();
+    int fusionCount = 0;
+    double lastFusionTime = lastTime;
 
-    glPointSize(10.0f);
     while (!glfwWindowShouldClose(window))
     {
         double currentTime = glfwGetTime();
         float deltaTime = static_cast<float>(currentTime - lastTime);
         lastTime = currentTime;
+        
+        if (deltaTime > 0.033f) deltaTime = 0.033f;
 
-        // Update particle position (move horizontally)
-        particle.x += speed * deltaTime;
+        plasmaPhysics.updateParticles(particles, deltaTime);
+        
+        int activeD = 0, activeT = 0, heliumCount = 0, neutronCount = 0;
+        for (const auto& p : particles) {
+            if (!p.active) continue;
+            if (p.type == Particle::DEUTERIUM) activeD++;
+            else if (p.type == Particle::TRITIUM) activeT++;
+            else if (p.type == Particle::HELIUM) heliumCount++;
+            else if (p.type == Particle::NEUTRON) neutronCount++;
+        }
+        
+        int currentFusions = heliumCount;
+        if (currentFusions > fusionCount) {
+            std::cout << "FUSION EVENT! Total fusions: " << currentFusions 
+                     << " | D: " << activeD << " T: " << activeT 
+                     << " | He: " << heliumCount << " n: " << neutronCount << std::endl;
+            fusionCount = currentFusions;
+            lastFusionTime = currentTime;
+        }
 
-        // Wrap around screen
-        if (particle.x > 1.0f)
-            particle.x = -1.0f;
-
-        // Regenerate vertices with new position
-        circleVertices = generateCircleVertices(particle.x, particle.y, particle.radius, 64);
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, circleVertices.size() * sizeof(float), circleVertices.data());
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(0.02f, 0.02f, 0.05f, 1.0f); 
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
+        
+        tokamak.render(shaderProgram);
+        
         glBindVertexArray(VAO);
-        glDrawArrays(GL_POINTS, 0, 1);
-        glBindVertexArray(0);
+        GLint colorLoc = glGetUniformLocation(shaderProgram, "particleColor");
+        
+        for (const auto& p : particles) {
+            if (!p.active) continue;
+            
+            std::vector<float> verts = generateCircleVertices(p.x, p.y, p.radius, 16);
+            
+            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+            glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float), 
+                        verts.data(), GL_DYNAMIC_DRAW);
+            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+            glEnableVertexAttribArray(0);
+            
+            float glowFactor = 1.0f;
+            if (p.type == Particle::HELIUM && (currentTime - lastFusionTime) < 0.5f) {
+                glowFactor = 2.0f; 
+            }
+            
+            glUniform4f(colorLoc, p.r * glowFactor, p.g * glowFactor, p.b * glowFactor, p.a);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, verts.size() / 2);
+        }
 
+        glBindVertexArray(0);
         glfwSwapBuffers(window);
         glfwPollEvents();
+        
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window, true);
+        }
     }
 
+    std::cout << "\nSimulation ended." << std::endl;
+    std::cout << "Final statistics:" << std::endl;
+    std::cout << "  Total fusion reactions: " << fusionCount << std::endl;
+    std::cout << "  Final particle count: " << particles.size() << std::endl;
+    
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(shaderProgram);
+    tokamak.cleanup();
     glfwDestroyWindow(window);
     glfwTerminate();
+    
     return 0;
 }

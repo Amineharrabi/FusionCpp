@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "*.tcc": "cpp",
+        "*.inl": "cpp",
+        "imgui.h": "cpp",
+        "imgui_impl_*.h": "cpp",
+        "imgui_impl_*.cpp": "cpp"
+    },
+    "editor.formatOnSave": true,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cpptools",
+    "cmake.sourceDirectory": "D:/unfinished projects/Fusion/external/glm/g-truc-glm-a532f5b"
+    // yo to the guy (or fine shit ;)  who forked this shit . change this shit (cmake.sourceDirectory)
+}
