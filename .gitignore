@@ -16,7 +16,6 @@ external/
 imgui-master/
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
