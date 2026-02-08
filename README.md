@@ -1,6 +1,12 @@
 # TOKAMAK FUSION REACTOR SIMULATION
 
 A comprehensive 2D cross-sectional simulation of a Tokamak nuclear fusion reactor with realistic plasma physics and magnetic confinement.
+Progress so Far : 
+
+
+
+https://github.com/user-attachments/assets/a96339a2-042b-4eeb-ace1-019e08007bd2
+
 
 ## PROJECT STRUCTURE
 
