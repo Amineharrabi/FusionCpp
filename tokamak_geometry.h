@@ -65,6 +65,70 @@ struct TokamakGeometry {
     float distanceFromPlasmaEdge(float x, float y) const;
 };
 
+inline float distancePointToSegment(float px, float py, float ax, float ay, float bx, float by)
+{
+    float abx = bx - ax;
+    float aby = by - ay;
+    float apx = px - ax;
+    float apy = py - ay;
+
+    float abLen2 = abx * abx + aby * aby;
+    if (abLen2 < 1e-20f) {
+        float dx = px - ax;
+        float dy = py - ay;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    float t = (apx * abx + apy * aby) / abLen2;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    float cx = ax + t * abx;
+    float cy = ay + t * aby;
+    float dx = px - cx;
+    float dy = py - cy;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+inline bool pointInPolygonEvenOdd(const std::vector<float>& polyXY, float x, float y)
+{
+    const size_t n = polyXY.size() / 2;
+    if (n < 3) return false;
+
+    bool inside = false;
+    for (size_t i = 0, j = n - 1; i < n; j = i++) {
+        float xi = polyXY[i * 2 + 0];
+        float yi = polyXY[i * 2 + 1];
+        float xj = polyXY[j * 2 + 0];
+        float yj = polyXY[j * 2 + 1];
+
+        bool intersect = ((yi > y) != (yj > y)) &&
+            (x < (xj - xi) * (y - yi) / ((yj - yi) + 1e-20f) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+inline float signedDistanceToPolygon(const std::vector<float>& polyXY, float x, float y)
+{
+    const size_t n = polyXY.size() / 2;
+    if (n < 2) return 1e6f;
+
+    float minDist = 1e6f;
+    for (size_t i = 0; i < n; ++i) {
+        size_t j = (i + 1) % n;
+        float ax = polyXY[i * 2 + 0];
+        float ay = polyXY[i * 2 + 1];
+        float bx = polyXY[j * 2 + 0];
+        float by = polyXY[j * 2 + 1];
+        float d = distancePointToSegment(x, y, ax, ay, bx, by);
+        if (d < minDist) minDist = d;
+    }
+
+    bool inside = pointInPolygonEvenOdd(polyXY, x, y);
+    return inside ? -minDist : minDist;
+}
+
 /**
  * Generate the D-shaped plasma cross-section
  * Uses parametric equations for elongated, triangular plasma
@@ -220,25 +284,12 @@ inline void TokamakGeometry::render(GLuint shaderProgram)
 
 inline bool TokamakGeometry::isInsidePlasma(float x, float y) const
 {
-    // Approximate check using ellipse with triangularity correction
-    // For D-shape, we check if point is within the deformed boundary
-    
-    float normalizedX = x / minorRadius;
-    float normalizedY = y / (plasmaElongation * minorRadius);
-    
-    // Simple elliptical approximation (can be refined)
-    float distance = normalizedX * normalizedX + normalizedY * normalizedY;
-    
-    return distance <= 1.0f;
+    return signedDistanceToPolygon(plasmaVertices, x, y) <= 0.0f;
 }
 
 inline float TokamakGeometry::distanceFromPlasmaEdge(float x, float y) const
 {
-    float normalizedX = x / minorRadius;
-    float normalizedY = y / (plasmaElongation * minorRadius);
-    float distance = std::sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
-    
-    return distance - 1.0f; // Negative inside, positive outside
+    return signedDistanceToPolygon(plasmaVertices, x, y);
 }
 
 inline void TokamakGeometry::cleanup()
