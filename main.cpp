@@ -6,11 +6,13 @@
 #include <vector>
 #include <cmath>
 
+// Include all simulation modules
 #include "particle.h"
 #include "tokamak_geometry.h"
 #include "magnetic_field.h"
 #include "plasma_physics.h"
 
+// Shader loading utility
 std::string loadShaderSource(const char *path)
 {
     std::ifstream file(path);
@@ -37,6 +39,7 @@ GLuint compileShader(GLenum type, const char *src)
 
 int main()
 {
+    // ================== GLFW/OpenGL INITIALIZATION ==================
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -71,6 +74,7 @@ int main()
     int windowWidth = 1200, windowHeight = 800;
     glViewport(0, 0, windowWidth, windowHeight);
 
+    // ================== SHADER COMPILATION ==================
     std::string vertSrc = loadShaderSource("particle.vert");
     std::string fragSrc = loadShaderSource("particle.frag");
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertSrc.c_str());
@@ -82,10 +86,12 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
+    // ================== TOKAMAK SETUP ==================
     std::cout << "\n============================================" << std::endl;
     std::cout << "TOKAMAK FUSION REACTOR SIMULATION" << std::endl;
     std::cout << "============================================\n" << std::endl;
     
+    // Initialize geometry (reactor structure)
     TokamakGeometry tokamak;
     std::cout << "Tokamak geometry initialized:" << std::endl;
     std::cout << "  Major radius: " << tokamak.majorRadius << " m (simulation units)" << std::endl;
@@ -93,17 +99,21 @@ int main()
     std::cout << "  Plasma elongation: " << tokamak.plasmaElongation << std::endl;
     std::cout << "  Triangularity: " << tokamak.plasmaTriangularity << std::endl;
     
+    // Initialize magnetic field
     MagneticField magneticField(tokamak.majorRadius, tokamak.minorRadius, 8.0f);
     std::cout << "\nMagnetic field configured:" << std::endl;
     std::cout << "  Toroidal field: " << magneticField.B_toroidal << " T" << std::endl;
     std::cout << "  Poloidal field: " << magneticField.B_poloidal << " T" << std::endl;
     std::cout << "  Safety factor q: " << magneticField.safetyFactor << std::endl;
     
+    // Initialize plasma physics engine
     PlasmaPhysics plasmaPhysics(magneticField, tokamak);
     std::cout << "\nPlasma physics engine ready." << std::endl;
     
-    int numDeuterium = 800;  
-    int numTritium = 200;
+    // ================== PARTICLE INITIALIZATION ==================
+    // Create thermal plasma with D-T fuel
+    int numDeuterium = 100;  // Adjust for performance (100-500 for good visualization)
+    int numTritium = 100;
     
     std::vector<Particle> particles = plasmaPhysics.createThermalPlasma(numDeuterium, numTritium);
     
@@ -111,26 +121,33 @@ int main()
     std::cout << "  Deuterium ions: " << numDeuterium << std::endl;
     std::cout << "  Tritium ions: " << numTritium << std::endl;
     std::cout << "  Total particles: " << particles.size() << std::endl;
-    std::cout << "\nSimulation started" << std::endl;
+    std::cout << "\nSimulation started. Watch for fusion events (yellow flashes)!" << std::endl;
+    std::cout << "============================================\n" << std::endl;
     
+    // ================== RENDERING SETUP ==================
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
 
+    // Timing
     double lastTime = glfwGetTime();
     int fusionCount = 0;
     double lastFusionTime = lastTime;
 
+    // ================== MAIN SIMULATION LOOP ==================
     while (!glfwWindowShouldClose(window))
     {
         double currentTime = glfwGetTime();
         float deltaTime = static_cast<float>(currentTime - lastTime);
         lastTime = currentTime;
         
+        // Limit dt for numerical stability
         if (deltaTime > 0.033f) deltaTime = 0.033f;
 
+        // ============ PHYSICS UPDATE ============
         plasmaPhysics.updateParticles(particles, deltaTime);
         
+        // Count active particles and fusion products
         int activeD = 0, activeT = 0, heliumCount = 0, neutronCount = 0;
         for (const auto& p : particles) {
             if (!p.active) continue;
@@ -149,19 +166,23 @@ int main()
             lastFusionTime = currentTime;
         }
 
-        glClearColor(0.02f, 0.02f, 0.05f, 1.0f); 
+        // ============ RENDERING ============
+        glClearColor(0.02f, 0.02f, 0.05f, 1.0f); // Dark background
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
         
+        // Draw Tokamak structure
         tokamak.render(shaderProgram);
         
+        // Draw particles
         glBindVertexArray(VAO);
         GLint colorLoc = glGetUniformLocation(shaderProgram, "particleColor");
         
         for (const auto& p : particles) {
             if (!p.active) continue;
             
+            // Generate circle vertices for particle
             std::vector<float> verts = generateCircleVertices(p.x, p.y, p.radius, 16);
             
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -170,9 +191,10 @@ int main()
             glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
             glEnableVertexAttribArray(0);
             
+            // Add glow effect for recent fusion products
             float glowFactor = 1.0f;
             if (p.type == Particle::HELIUM && (currentTime - lastFusionTime) < 0.5f) {
-                glowFactor = 2.0f; 
+                glowFactor = 2.0f; // Bright flash for new helium
             }
             
             glUniform4f(colorLoc, p.r * glowFactor, p.g * glowFactor, p.b * glowFactor, p.a);
@@ -183,11 +205,13 @@ int main()
         glfwSwapBuffers(window);
         glfwPollEvents();
         
+        // Exit on ESC key
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, true);
         }
     }
 
+    // ================== CLEANUP ==================
     std::cout << "\nSimulation ended." << std::endl;
     std::cout << "Final statistics:" << std::endl;
     std::cout << "  Total fusion reactions: " << fusionCount << std::endl;
