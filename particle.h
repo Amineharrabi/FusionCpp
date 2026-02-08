@@ -85,7 +85,7 @@ inline Particle createParticle(Particle::Type type, float x, float y, float vx, 
     p.vy = vy;
     p.type = type;
     p.active = true;
-    p.radius = 0.003f; // Very small visual radius
+    p.radius = 0.006f; // Very small visual radius
 
     switch (type)
     {
@@ -128,7 +128,7 @@ inline Particle createParticle(Particle::Type type, float x, float y, float vx, 
         p.g = 0.2f;
         p.b = 0.2f;
         p.a = 0.6f;        // Red
-        p.radius = 0.001f; // Even smaller
+        p.radius = 0.003f; // Even smaller
         break;
     }
 
