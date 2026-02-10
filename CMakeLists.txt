@@ -24,6 +24,7 @@ target_include_directories(FusionTokamakSim PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glad/include
     ${CMAKE_CURRENT_SOURCE_DIR}/external/glfw/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/glm/g-truc-glm-a532f5b
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui-master
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui-master/backends
 )
@@ -65,6 +66,11 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/particle.frag"
             "$<TARGET_FILE_DIR:FusionTokamakSim>/particle.frag"
+    )
+    add_custom_command(TARGET FusionTokamakSim POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/tokamak_raytrace.comp"
+            "$<TARGET_FILE_DIR:FusionTokamakSim>/tokamak_raytrace.comp"
     )
 
     if(EXISTS "${GLFW_LIB_DIR}/glfw3.dll")
