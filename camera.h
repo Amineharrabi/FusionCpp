@@ -6,31 +6,25 @@
 #include <cmath>
 
 struct OrbitCamera {
-    // Orbit parameters
-    float yaw   = 0.0f;       // Horizontal angle (radians)
-    float pitch  = 0.4f;      // Vertical angle (radians)
-    float distance = 4.0f;    // Distance from target
+    float yaw   = 0.0f;      
+    float pitch  = 0.4f;      
+    float distance = 4.0f;    
 
-    // Target point (center of torus)
     glm::vec3 target = glm::vec3(0.0f, 0.0f, 0.0f);
 
-    // Pan offset
     glm::vec3 panOffset = glm::vec3(0.0f);
 
-    // Constraints
     float minDistance = 1.0f;
     float maxDistance = 15.0f;
-    float minPitch = -1.5f;   // ~-85 degrees
-    float maxPitch = 1.5f;    // ~85 degrees
+    float minPitch = -1.5f;   
+    float maxPitch = 1.5f;    
 
-    // Smoothing
     float targetYaw = 0.0f;
     float targetPitch = 0.4f;
     float targetDistance = 4.0f;
     glm::vec3 targetPanOffset = glm::vec3(0.0f);
     float smoothFactor = 8.0f;
 
-    // Mouse state
     bool leftDragging = false;
     bool rightDragging = false;
     double lastMouseX = 0.0;
@@ -39,7 +33,6 @@ struct OrbitCamera {
     float panSensitivity = 0.005f;
     float zoomSensitivity = 0.3f;
 
-    // Projection
     float fov = 45.0f;
     float nearPlane = 0.01f;
     float farPlane = 100.0f;
@@ -66,7 +59,6 @@ struct OrbitCamera {
         return glm::inverse(vp);
     }
 
-    // Smooth update each frame
     void update(float dt) {
         float t = 1.0f - std::exp(-smoothFactor * dt);
         yaw += (targetYaw - yaw) * t;
@@ -75,7 +67,6 @@ struct OrbitCamera {
         panOffset += (targetPanOffset - panOffset) * t;
     }
 
-    // Input handlers
     void onMouseButton(int button, int action, double mouseX, double mouseY) {
         if (button == 0) { // Left
             leftDragging = (action == 1);
@@ -98,13 +89,11 @@ struct OrbitCamera {
         if (leftDragging) {
             targetYaw -= dx * orbitSensitivity;
             targetPitch += dy * orbitSensitivity;
-            // Clamp pitch
             if (targetPitch < minPitch) targetPitch = minPitch;
             if (targetPitch > maxPitch) targetPitch = maxPitch;
         }
 
         if (rightDragging) {
-            // Pan in view-local right/up directions
             glm::vec3 forward = glm::normalize(target + panOffset - getPosition());
             glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
             glm::vec3 up = glm::normalize(glm::cross(right, forward));

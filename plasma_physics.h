@@ -17,18 +17,15 @@ private:
     MagneticField& magneticField;
     TokamakGeometry& geometry;
 
-    // Simulation parameters
     float timeScale;
     float plasmaTemperature;
     float particleDensity;
     float velocityScale;
 
-    // Fusion tracking
     float fusionProbability;
     float fusionBoost;
     float maxFusionFractionPerStep;
 
-    // Confinement / stability
     float confinementStrength;
     float coreAttractionStrength;
     float driftOmega;
@@ -55,7 +52,6 @@ public:
         rng(std::random_device{}())
     {}
 
-    // Getters and setters
     float getTimeScale() const { return timeScale; }
     void setTimeScale(float v) { timeScale = v; }
     float getPlasmaTemperature() const { return plasmaTemperature; }
@@ -89,21 +85,16 @@ public:
     float getThermalVelocity(float mass) const;
     std::vector<Particle> createThermalPlasma(int numDeuterium, int numTritium);
 
-    /**
-     * Inject new fuel particles (D + T) to sustain the reaction.
-     * Places them randomly on the torus centerline with radial scatter.
-     */
+    
     void injectFuel(std::vector<Particle>& particles, int numD, int numT);
 };
 
-// ==================== IMPLEMENTATION ====================
 
 inline void PlasmaPhysics::updateParticles(std::vector<Particle>& particles, float dt)
 {
     float scaledDt = dt * timeScale;
     std::vector<Particle> newParticles;
 
-    // Indices for volumetric fusion
     std::vector<size_t> deuteriumIdx;
     std::vector<size_t> tritiumIdx;
     deuteriumIdx.reserve(particles.size());
@@ -115,10 +106,8 @@ inline void PlasmaPhysics::updateParticles(std::vector<Particle>& particles, flo
         if (particles[i].type == Particle::DEUTERIUM) deuteriumIdx.push_back(i);
         else if (particles[i].type == Particle::TRITIUM) tritiumIdx.push_back(i);
 
-        // Magnetic confinement (3D)
         applyMagneticForce3D(particles[i], scaledDt, dt);
 
-        // Optional Coulomb interactions
         if (enableCoulomb) {
             for (size_t j = i + 1; j < particles.size(); ++j) {
                 if (!particles[j].active) continue;
@@ -126,17 +115,14 @@ inline void PlasmaPhysics::updateParticles(std::vector<Particle>& particles, flo
             }
         }
 
-        // Update position (3D)
         particles[i].x += particles[i].vx * scaledDt;
         particles[i].y += particles[i].vy * scaledDt;
         particles[i].z += particles[i].vz * scaledDt;
 
-        // NaN safety
         if (!std::isfinite(particles[i].x) || !std::isfinite(particles[i].y) ||
             !std::isfinite(particles[i].z) ||
             !std::isfinite(particles[i].vx) || !std::isfinite(particles[i].vy) ||
             !std::isfinite(particles[i].vz)) {
-            // Reset to a random point on the torus
             float phi = 2.0f * M_PI * (rng() % 10000) / 10000.0f;
             particles[i].x = geometry.torusMajorR * std::cos(phi);
             particles[i].y = 0.0f;
@@ -146,22 +132,18 @@ inline void PlasmaPhysics::updateParticles(std::vector<Particle>& particles, flo
             particles[i].vz = 0.0f;
         }
 
-        // Kinetic energy
         particles[i].kineticEnergy = 0.5f * particles[i].mass *
             (particles[i].vx * particles[i].vx +
              particles[i].vy * particles[i].vy +
              particles[i].vz * particles[i].vz);
 
-        // Boundary collision (3D torus confinement)
         checkBoundaryCollision3D(particles[i], scaledDt);
     }
 
-    // ================== VOLUMETRIC D-T FUSION (TOY MODEL) ==================
     const int ND = (int)deuteriumIdx.size();
     const int NT = (int)tritiumIdx.size();
     const int maxPairs = (ND < NT) ? ND : NT;
     if (maxPairs > 0) {
-        // Approximate plasma volume (torus): V = 2π²Rr²
         float R = geometry.torusMajorR;
         float r = geometry.torusMinorR;
         float volume = 2.0f * M_PI * M_PI * R * r * r;
@@ -212,15 +194,12 @@ inline void PlasmaPhysics::applyMagneticForce3D(Particle& p, float scaledDt, flo
 {
     if (std::abs(p.charge) < 1e-30f) return;
 
-    // Get 3D magnetic field at particle position
     float Bx, By, Bz;
     magneticField.getTotalField(p.x, p.y, p.z, Bx, By, Bz);
 
-    // Lorentz force: F = q(v × B)
     float Fx, Fy, Fz;
     calculateLorentzForce(p.vx, p.vy, p.vz, Bx, By, Bz, p.charge, Fx, Fy, Fz);
 
-    // Mirror force
     float Fmx, Fmy, Fmz;
     calculateMirrorForce3D(p.x, p.y, p.z, p.vx, p.vy, p.vz, magneticField, p.mass, Fmx, Fmy, Fmz);
     Fx += Fmx;
@@ -232,12 +211,10 @@ inline void PlasmaPhysics::applyMagneticForce3D(Particle& p, float scaledDt, flo
     Fy *= forceScale;
     Fz *= forceScale;
 
-    // Acceleration
     p.vx += (Fx / p.mass) * scaledDt;
     p.vy += (Fy / p.mass) * scaledDt;
     p.vz += (Fz / p.mass) * scaledDt;
 
-    // Core attraction: pull toward the nearest centerline point
     float cx, cy, cz;
     geometry.projectToCenterline(p.x, p.y, p.z, cx, cy, cz);
     float dx = p.x - cx;
@@ -251,10 +228,8 @@ inline void PlasmaPhysics::applyMagneticForce3D(Particle& p, float scaledDt, flo
         p.vz += (-pull * dz) * scaledDt;
     }
 
-    // Toroidal drift: rotate particles around the torus ring (in XZ plane)
     float R = std::sqrt(p.x * p.x + p.z * p.z);
     if (R > 1e-6f) {
-        // Tangential direction in XZ: (-z/R, 0, x/R)
         float tx = -p.z / R;
         float tz = p.x / R;
         p.vx += driftOmega * tx * scaledDt;
@@ -330,7 +305,6 @@ inline bool PlasmaPhysics::attemptFusion(Particle& p1, Particle& p2,
         if (dist01(rng) > fusionChance) return false;
     }
 
-    // === FUSION: D + T → He⁴ + n + 17.6 MeV ===
     float cm_x = (p1.mass * p1.x + p2.mass * p2.x) / (p1.mass + p2.mass);
     float cm_y = (p1.mass * p1.y + p2.mass * p2.y) / (p1.mass + p2.mass);
     float cm_z = (p1.mass * p1.z + p2.mass * p2.z) / (p1.mass + p2.mass);
@@ -341,7 +315,6 @@ inline bool PlasmaPhysics::attemptFusion(Particle& p1, Particle& p2,
     float E_alpha = 3.5e6f * PhysicsConstants::ELEMENTARY_CHARGE;
     float E_neutron = 14.1e6f * PhysicsConstants::ELEMENTARY_CHARGE;
 
-    // Random 3D direction for product emission
     std::uniform_real_distribution<float> angle_dist(0.0f, 2.0f * M_PI);
     std::uniform_real_distribution<float> cos_dist(-1.0f, 1.0f);
     float phi = angle_dist(rng);
@@ -379,23 +352,19 @@ inline void PlasmaPhysics::checkBoundaryCollision3D(Particle& p, float dt)
     float sdf = geometry.torusSDF(p.x, p.y, p.z);
 
     if (sdf > 0.0f) {
-        // Particle outside torus — push it back
         float nx, ny, nz;
         geometry.torusNormal(p.x, p.y, p.z, nx, ny, nz);
 
-        // Inward acceleration
         float pushStrength = confinementStrength * sdf;
         p.vx -= pushStrength * nx * dt;
         p.vy -= pushStrength * ny * dt;
         p.vz -= pushStrength * nz * dt;
 
-        // Hard constraint: project back onto torus boundary
         float edgeBuffer = 0.01f;
         p.x -= (sdf + edgeBuffer) * nx * 1.05f;
         p.y -= (sdf + edgeBuffer) * ny * 1.05f;
         p.z -= (sdf + edgeBuffer) * nz * 1.05f;
 
-        // Remove outward velocity component
         float vdotn = p.vx * nx + p.vy * ny + p.vz * nz;
         if (vdotn > 0.0f) {
             p.vx -= vdotn * nx;
@@ -403,7 +372,6 @@ inline void PlasmaPhysics::checkBoundaryCollision3D(Particle& p, float dt)
             p.vz -= vdotn * nz;
         }
 
-        // Wall losses
         if (wallLossProbability > 0.0f) {
             std::uniform_real_distribution<float> u01(0.0f, 1.0f);
             if (u01(rng) < wallLossProbability) {
@@ -411,7 +379,6 @@ inline void PlasmaPhysics::checkBoundaryCollision3D(Particle& p, float dt)
             }
         }
     } else if (sdf > -0.02f) {
-        // Close to boundary — gentle inward push
         float nx, ny, nz;
         geometry.torusNormal(p.x, p.y, p.z, nx, ny, nz);
         float penetration = sdf + 0.02f;
@@ -447,11 +414,10 @@ inline std::vector<Particle> PlasmaPhysics::createThermalPlasma(
     float R = geometry.torusMajorR;
     float rr = geometry.torusMinorR;
 
-    // Create deuterium particles distributed inside the torus
     for (int i = 0; i < numDeuterium; ++i) {
-        float phi = phi_dist(rng);   // toroidal angle
-        float theta = theta_dist(rng); // poloidal angle
-        float rFrac = std::sqrt(r_dist(rng)) * rr * 0.85f; // concentrate toward center
+        float phi = phi_dist(rng);   
+        float theta = theta_dist(rng); 
+        float rFrac = std::sqrt(r_dist(rng)) * rr * 0.85f; 
 
         float x = (R + rFrac * std::cos(theta)) * std::cos(phi);
         float y = rFrac * std::sin(theta);
@@ -464,7 +430,6 @@ inline std::vector<Particle> PlasmaPhysics::createThermalPlasma(
         particles.push_back(createParticle(Particle::DEUTERIUM, x, y, vx, vy, z, vz));
     }
 
-    // Create tritium particles
     for (int i = 0; i < numTritium; ++i) {
         float phi = phi_dist(rng);
         float theta = theta_dist(rng);

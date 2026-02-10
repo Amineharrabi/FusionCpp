@@ -1,17 +1,3 @@
-/**
- * TOKAMAK FUSION REACTOR SIMULATION — 3D with GPU Compute Shader Ray Tracing
- * 
- * Architecture: CPU physics → upload to GPU → compute shader ray traces → blit → ImGui overlay
- * 
- * Features:
- *   - 3D torus with semi-transparent shell (SDF ray marching)
- *   - Plasma particles orbiting inside the torus (ray-sphere intersection)
- *   - Fusion flash effects at collision points
- *   - Orbit camera (LMB drag orbit, scroll zoom, RMB pan)
- *   - Fueling mechanic to sustain plasma
- *   - ImGui control panel
- */
-
 #include <glad/glad.h>
 #include <glfw/glfw3.h>
 #include <glm/glm.hpp>
@@ -29,21 +15,17 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-// Simulation modules
 #include "particle.h"
 #include "tokamak_geometry.h"
 #include "magnetic_field.h"
 #include "plasma_physics.h"
 #include "camera.h"
-#include "ray_tracing.cpp"  // GPURayTracer class (header-style, included directly)
-
-// ==================== GLOBALS FOR CALLBACKS ====================
+#include "ray_tracing.cpp"  
 OrbitCamera g_camera;
 int g_windowWidth = 1200;
 int g_windowHeight = 800;
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    // Don't process camera input if ImGui wants the mouse
     ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureMouse) return;
     
@@ -79,15 +61,12 @@ void fatalError(const char* msg) {
     exit(-1);
 }
 
-// ==================== MAIN ====================
 int main()
 {
-    // ================== GLFW/OpenGL 4.3 INITIALIZATION ==================
     if (!glfwInit()) {
         fatalError("Failed to initialize GLFW");
     }
     
-    // Request OpenGL 4.3 for compute shader support
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -110,13 +89,11 @@ int main()
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GPU: " << glGetString(GL_RENDERER) << std::endl;
 
-    // Set callbacks
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
-    // ================== IMGUI ==================
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
@@ -127,13 +104,11 @@ int main()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glViewport(0, 0, g_windowWidth, g_windowHeight);
 
-    // ================== GPU RAY TRACER ==================
     GPURayTracer rayTracer;
     if (!rayTracer.initialize(g_windowWidth, g_windowHeight)) {
         fatalError("Failed to initialize GPU ray tracer (check console for shader errors)");
     }
 
-    // ================== TOKAMAK SETUP ==================
     std::cout << "\n============================================" << std::endl;
     std::cout << "TOKAMAK FUSION REACTOR — 3D SIMULATION" << std::endl;
     std::cout << "============================================\n" << std::endl;
@@ -149,8 +124,8 @@ int main()
 
     PlasmaPhysics plasmaPhysics(magneticField, tokamak);
     
-    int numDeuterium = 3000;
-    int numTritium = 3000;
+    int numDeuterium = 4000;
+    int numTritium = 4000;
     std::vector<Particle> particles = plasmaPhysics.createThermalPlasma(numDeuterium, numTritium);
     
     std::cout << "Initial plasma: " << numDeuterium << " D + " << numTritium << " T = " 
@@ -158,7 +133,6 @@ int main()
     std::cout << "\nControls: LMB drag = orbit, Scroll = zoom, RMB drag = pan" << std::endl;
     std::cout << "Press Start Injection to begin fusion!" << std::endl;
 
-    // ================== SIMULATION STATE ==================
     double lastTime = glfwGetTime();
     int fusionCount = 0;
     double lastFusionTime = lastTime;
@@ -167,18 +141,14 @@ int main()
     float injectionKick = 0.25f;
     std::mt19937 uiRng(std::random_device{}());
 
-    // Fusion flash tracking
     std::vector<FusionFlash> activeFlashes;
-    const float flashDuration = 2.5f; // seconds - longer duration for lingering heat
+    const float flashDuration = 2.5f; 
 
-    // Fueling
     bool autoFuel = true;
-    int fuelThreshold = 150; // Inject fuel when D or T drops below this
-    int fuelBatchSize = 80;  // How many D+T pairs to inject
+    int fuelThreshold = 5000; 
+    int fuelBatchSize = 1000;  
     float fuelCooldown = 0.0f;
-    float fuelCooldownTime = 2.0f; // seconds between auto-fuel injections
-
-    // ================== MAIN LOOP ==================
+    float fuelCooldownTime = 0.5f; 
     while (!glfwWindowShouldClose(window))
     {
         double currentTime = glfwGetTime();
@@ -186,10 +156,8 @@ int main()
         lastTime = currentTime;
         if (deltaTime > 0.033f) deltaTime = 0.033f;
 
-        // Update camera
         g_camera.update(deltaTime);
 
-        // Handle window resize
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
         if (fbWidth != rayTracer.width || fbHeight != rayTracer.height) {
@@ -200,14 +168,12 @@ int main()
             }
         }
 
-        // ============ IMGUI ============
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
         ImGui::Begin("Plasma Controls");
 
-        // Get/set physics parameters
         float timeScale = plasmaPhysics.getTimeScale();
         float plasmaTemperature = plasmaPhysics.getPlasmaTemperature();
         float particleDensity = plasmaPhysics.getParticleDensity();
@@ -231,7 +197,6 @@ int main()
                     if (p.type != Particle::DEUTERIUM && p.type != Particle::TRITIUM) continue;
                     float a = angleDist(uiRng);
                     float b = angleDist2(uiRng);
-                    // Kick in toroidal direction
                     float R = std::sqrt(p.x * p.x + p.z * p.z);
                     if (R > 1e-6f) {
                         p.vx += injectionKick * (-p.z / R);
@@ -268,14 +233,13 @@ int main()
         ImGui::Separator();
         ImGui::Text("--- Fueling ---");
         ImGui::Checkbox("Auto-Fuel", &autoFuel);
-        ImGui::SliderInt("Fuel Threshold", &fuelThreshold, 10, 500);
-        ImGui::SliderInt("Fuel Batch Size", &fuelBatchSize, 10, 200);
+        ImGui::SliderInt("Fuel Threshold", &fuelThreshold, 10, 5000);
+        ImGui::SliderInt("Fuel Batch Size", &fuelBatchSize, 10, 1000);
         if (ImGui::Button("Manual Refuel")) {
             plasmaPhysics.injectFuel(particles, fuelBatchSize, fuelBatchSize);
             std::cout << "REFUELED: +" << fuelBatchSize << " D + " << fuelBatchSize << " T" << std::endl;
         }
 
-        // Count particles
         int activeD = 0, activeT = 0, heliumCount = 0, neutronCount = 0, totalActive = 0;
         for (const auto& p : particles) {
             if (!p.active) continue;
@@ -299,14 +263,11 @@ int main()
 
         ImGui::End();
 
-        // ============ PHYSICS UPDATE ============
         if (simulationRunning) {
-            // Track pre-fusion helium count
             int preFusionHe = heliumCount;
 
             plasmaPhysics.updateParticles(particles, deltaTime);
 
-            // Count post-step helium to detect new fusions
             int postFusionHe = 0;
             for (const auto& p : particles) {
                 if (p.active && p.type == Particle::HELIUM) postFusionHe++;
@@ -317,7 +278,6 @@ int main()
                 fusionCount += newFusions;
                 lastFusionTime = currentTime;
 
-                // Find new helium particles (they're at the end of the vector) and create flashes
                 for (int i = (int)particles.size() - 1; i >= 0 && newFusions > 0; --i) {
                     if (particles[i].active && particles[i].type == Particle::HELIUM) {
                         FusionFlash flash;
@@ -334,15 +294,13 @@ int main()
                     }
                 }
 
-                std::cout << "FUSION! Total: " << fusionCount
-                          << " | D:" << activeD << " T:" << activeT
-                          << " | He:" << postFusionHe << std::endl;
+                std::cout << "fusion happned Total: " << fusionCount
+                          << " Deuterium:" << activeD << " T:" << activeT
+                          << " Helium:" << postFusionHe << std::endl;
             }
 
-            // Auto-fueling
             if (autoFuel) {
                 fuelCooldown -= deltaTime;
-                // Recount after physics update
                 int curD = 0, curT = 0;
                 for (const auto& p : particles) {
                     if (!p.active) continue;
@@ -352,13 +310,12 @@ int main()
                 if ((curD < fuelThreshold || curT < fuelThreshold) && fuelCooldown <= 0.0f) {
                     plasmaPhysics.injectFuel(particles, fuelBatchSize, fuelBatchSize);
                     fuelCooldown = fuelCooldownTime;
-                    std::cout << "AUTO-FUEL: +" << fuelBatchSize << " D + " << fuelBatchSize 
+                    std::cout << "autoFuel: +" << fuelBatchSize << " D + " << fuelBatchSize 
                               << " T (D was " << curD << ", T was " << curT << ")" << std::endl;
                 }
             }
 
-            // Cleanup inactive particles periodically
-            if (particles.size() > 2000) {
+            if (particles.size() > 15000) {
                 particles.erase(
                     std::remove_if(particles.begin(), particles.end(),
                                    [](const Particle& p) { return !p.active; }),
@@ -367,35 +324,28 @@ int main()
             }
         }
 
-        // ============ UPDATE FUSION FLASHES ============
         for (auto& flash : activeFlashes) {
             flash.age += deltaTime / flashDuration;
         }
-        // Remove expired flashes
         activeFlashes.erase(
             std::remove_if(activeFlashes.begin(), activeFlashes.end(),
                            [](const FusionFlash& f) { return f.age >= 1.0f; }),
             activeFlashes.end()
         );
 
-        // ============ PREPARE GPU DATA ============
-        // We no longer send individual particles to the GPU for rendering.
-        // The compute shader renders volumetric plasma instead.
+
         std::vector<GPUParticle> gpuParticles; 
 
 
-        // Cap flashes
         std::vector<FusionFlash> gpuFlashes = activeFlashes;
         if ((int)gpuFlashes.size() > GPURayTracer::MAX_FLASHES) {
             gpuFlashes.resize(GPURayTracer::MAX_FLASHES);
         }
 
-        // Camera matrices
         float aspect = (float)g_windowWidth / (float)g_windowHeight;
         glm::mat4 invVP = g_camera.getInverseViewProjection(aspect);
         glm::vec3 camPos = g_camera.getPosition();
 
-        // ============ GPU RAY TRACE ============
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -407,10 +357,10 @@ int main()
             tokamak.torusOpacity,
             (float)currentTime,
             gpuParticles,
-            gpuFlashes
+            gpuFlashes,
+            totalActive
         );
 
-        // ============ IMGUI RENDER (on top of ray-traced scene) ============
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -422,7 +372,6 @@ int main()
         }
     }
 
-    // ============ CLEANUP ============
     std::cout << "\nSimulation ended." << std::endl;
     std::cout << "Total fusion reactions: " << fusionCount << std::endl;
     std::cout << "Final particle count: " << particles.size() << std::endl;

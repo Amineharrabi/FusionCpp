@@ -1,13 +1,3 @@
-/**
- * GPU Ray Tracing Engine for Tokamak Fusion Reactor
- * 
- * Adapted from a CPU-based ray tracer into a GPU compute shader pipeline.
- * Uses OpenGL 4.3 compute shaders for real-time ray tracing.
- * 
- * Architecture:
- *   CPU uploads simulation data (UBO + SSBOs) → GPU compute shader ray traces → output texture → fullscreen blit
- */
-
 #ifndef RAY_TRACING_H
 #define RAY_TRACING_H
 
@@ -23,39 +13,31 @@
 
 #include "particle.h"
 
-// ==================== UBO LAYOUT (matches compute shader) ====================
-// Must be std140 aligned
+
 struct SimulationUBO {
-    glm::mat4 invViewProj;    // 64 bytes, offset 0
-    glm::vec4 cameraPos;      // 16 bytes, offset 64
-    glm::vec4 torusParams;    // 16 bytes, offset 80 (majorR, minorR, opacity, time)
-    glm::ivec4 counts;        // 16 bytes, offset 96 (numParticles, numFlashes, screenW, screenH)
-    // Total: 112 bytes
+    glm::mat4 invViewProj;    
+    glm::vec4 cameraPos;      
+    glm::vec4 torusParams;    
+    glm::ivec4 counts;        
 };
 
-// ==================== GPU RENDER ENGINE ====================
 class GPURayTracer {
 public:
-    // Compute shader
     GLuint computeProgram = 0;
     GLuint outputTexture = 0;
 
-    // Fullscreen blit
     GLuint blitProgram = 0;
     GLuint quadVAO = 0;
     GLuint quadVBO = 0;
 
-    // GPU buffers
     GLuint simulationUBO = 0;
     GLuint particleSSBO = 0;
     GLuint flashSSBO = 0;
 
-    // Dimensions
     int width = 1200;
     int height = 800;
 
-    // Max buffer capacities
-    static const int MAX_PARTICLES = 4096;
+    static const int MAX_PARTICLES = 20000;
     static const int MAX_FLASHES = 64;
 
     bool initialize(int w, int h) {
@@ -77,15 +59,15 @@ public:
                 float torusMajorR, float torusMinorR, float torusOpacity,
                 float time,
                 const std::vector<GPUParticle>& gpuParticles,
-                const std::vector<FusionFlash>& fusionFlashes)
+                const std::vector<FusionFlash>& fusionFlashes,
+                int numParticles)
     {
-        // Upload simulation data to UBO
         SimulationUBO ubo;
         ubo.invViewProj = invViewProj;
         ubo.cameraPos = glm::vec4(cameraPos, 0.0f);
         ubo.torusParams = glm::vec4(torusMajorR, torusMinorR, torusOpacity, time);
         ubo.counts = glm::ivec4(
-            (int)gpuParticles.size(),
+            numParticles,
             (int)fusionFlashes.size(),
             width,
             height
@@ -94,7 +76,6 @@ public:
         glBindBuffer(GL_UNIFORM_BUFFER, simulationUBO);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimulationUBO), &ubo);
 
-        // Upload particles to SSBO
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
         if (!gpuParticles.empty()) {
             size_t dataSize = gpuParticles.size() * sizeof(GPUParticle);
@@ -103,7 +84,6 @@ public:
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, dataSize, gpuParticles.data());
         }
 
-        // Upload fusion flashes to SSBO
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, flashSSBO);
         if (!fusionFlashes.empty()) {
             size_t dataSize = fusionFlashes.size() * sizeof(FusionFlash);
@@ -112,7 +92,6 @@ public:
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, dataSize, fusionFlashes.data());
         }
 
-        // Dispatch compute shader
         glUseProgram(computeProgram);
 
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, simulationUBO);
@@ -124,10 +103,8 @@ public:
         int groupsY = (height + 15) / 16;
         glDispatchCompute(groupsX, groupsY, 1);
 
-        // Memory barrier: ensure compute writes are visible before reading
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        // Blit the output texture to screen
         blitToScreen();
     }
 
@@ -147,7 +124,6 @@ public:
     void resize(int w, int h) {
         width = w;
         height = h;
-        // Recreate output texture at new size
         if (outputTexture) glDeleteTextures(1, &outputTexture);
         createOutputTexture();
     }
@@ -221,7 +197,6 @@ private:
     }
 
     bool initBlitShader() {
-        // Load vertex and fragment shaders for fullscreen quad blit
         std::string vertSrc = loadFile("particle.vert");
         std::string fragSrc = loadFile("particle.frag");
         if (vertSrc.empty() || fragSrc.empty()) {
@@ -270,10 +245,8 @@ private:
         glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-        // Position attribute (location 0)
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
-        // TexCoord attribute (location 1)
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
         glEnableVertexAttribArray(1);
 
@@ -291,17 +264,14 @@ private:
     }
 
     void createBuffers() {
-        // UBO for simulation state
         glGenBuffers(1, &simulationUBO);
         glBindBuffer(GL_UNIFORM_BUFFER, simulationUBO);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(SimulationUBO), nullptr, GL_DYNAMIC_DRAW);
 
-        // SSBO for particles
         glGenBuffers(1, &particleSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
         glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_PARTICLES * sizeof(GPUParticle), nullptr, GL_DYNAMIC_DRAW);
 
-        // SSBO for fusion flashes
         glGenBuffers(1, &flashSSBO);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, flashSSBO);
         glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_FLASHES * sizeof(FusionFlash), nullptr, GL_DYNAMIC_DRAW);

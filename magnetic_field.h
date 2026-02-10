@@ -71,45 +71,32 @@ struct MagneticField {
         dz = x / R;
     }
 
-    /**
-     * Get 3D poloidal field at a point.
-     * The poloidal field circulates around the tube cross-section.
-     * At a point P, we find the nearest centerline point C, then the poloidal direction
-     * is tangent to the circle in the plane containing P, C, and the Y axis, perpendicular
-     * to the radial direction from C to P.
-     */
+   
     void getPoloidalField3D(float x, float y, float z, float& Bx, float& By, float& Bz) const {
-        // Project to centerline
         float Rxz = std::sqrt(x * x + z * z);
         if (Rxz < 1e-6f) Rxz = 1e-6f;
         
-        // Centerline point
         float cx = majorRadius * (x / Rxz);
         float cz = majorRadius * (z / Rxz);
         
-        // Radial vector from centerline to point (in the poloidal plane)
         float rx = x - cx;
-        float ry = y;  // centerline y = 0
+        float ry = y;  
         float rz = z - cz;
         float rLen = std::sqrt(rx * rx + ry * ry + rz * rz);
         if (rLen < 1e-6f) rLen = 1e-6f;
         
-        // Normalize radial
         float rnx = rx / rLen;
         float rny = ry / rLen;
         float rnz = rz / rLen;
         
-        // Toroidal direction (tangent to the torus ring)
         float tdx, tdy, tdz;
         getToroidalFieldDir(x, z, tdx, tdy, tdz);
         
-        // Poloidal direction = cross(toroidal_dir, radial_dir)
-        // This gives us the tangential direction in the poloidal plane
+      
         float pdx = tdy * rnz - tdz * rny;
         float pdy = tdz * rnx - tdx * rnz;
         float pdz = tdx * rny - tdy * rnx;
         
-        // Poloidal field magnitude increases linearly with minor radius fraction
         float rFrac = rLen / minorRadius;
         if (rFrac > 2.0f) rFrac = 2.0f;
         float B_pol = B_poloidal * rFrac;
@@ -119,10 +106,6 @@ struct MagneticField {
         Bz = B_pol * pdz;
     }
     
-    /**
-     * Calculate total magnetic field at position (x, y, z).
-     * Returns 3D field vector.
-     */
     void getTotalField(float x, float y, float z, float& Bx, float& By, float& Bz) const {
         // Poloidal field
         getPoloidalField3D(x, y, z, Bx, By, Bz);
@@ -137,17 +120,12 @@ struct MagneticField {
         Bz += Bt * tdz;
     }
 
-    // Legacy 2D interface (px, py mapped to radial and vertical)
     void getTotalField(float px, float py, float& Bx, float& By, float& Bz) const {
-        // For 2D compatibility: treat px as radial offset, py as vertical
-        // Map to 3D: x = majorRadius + px, y = py, z = 0
+       
         getTotalField(majorRadius + px, py, 0.0f, Bx, By, Bz);
     }
 
-    /**
-     * Calculate magnetic pressure at position
-     * P_mag = B²/(2μ₀)
-     */
+    
     float getMagneticPressure(float x, float y, float z) const {
         const float mu0 = 4.0f * M_PI * 1e-7f;
         float Bx, By, Bz;
@@ -165,17 +143,13 @@ struct MagneticField {
     }
 };
 
-/**
- * Calculate 3D Lorentz force on a charged particle
- * F = q(v × B)
- */
+
 inline void calculateLorentzForce(
     float vx, float vy, float vz,
     float Bx, float By, float Bz,
     float charge,
     float& Fx, float& Fy, float& Fz)
 {
-    // Cross product: v × B
     float vCrossBx = vy * Bz - vz * By;
     float vCrossBy = vz * Bx - vx * Bz;
     float vCrossBz = vx * By - vy * Bx;
@@ -185,10 +159,7 @@ inline void calculateLorentzForce(
     Fz = charge * vCrossBz;
 }
 
-/**
- * 3D Magnetic mirror force
- * F_mirror = -μ·∇B
- */
+
 inline void calculateMirrorForce3D(
     float x, float y, float z,
     float vx, float vy, float vz,
@@ -199,28 +170,24 @@ inline void calculateMirrorForce3D(
     const float dx = 0.01f;
     float Bx1, By1, Bz1, Bx2, By2, Bz2;
     
-    // dB/dx
     field.getTotalField(x - dx, y, z, Bx1, By1, Bz1);
     field.getTotalField(x + dx, y, z, Bx2, By2, Bz2);
     float B1 = std::sqrt(Bx1 * Bx1 + By1 * By1 + Bz1 * Bz1);
     float B2 = std::sqrt(Bx2 * Bx2 + By2 * By2 + Bz2 * Bz2);
     float dBdx = (B2 - B1) / (2.0f * dx);
     
-    // dB/dy
     field.getTotalField(x, y - dx, z, Bx1, By1, Bz1);
     field.getTotalField(x, y + dx, z, Bx2, By2, Bz2);
     B1 = std::sqrt(Bx1 * Bx1 + By1 * By1 + Bz1 * Bz1);
     B2 = std::sqrt(Bx2 * Bx2 + By2 * By2 + Bz2 * Bz2);
     float dBdy = (B2 - B1) / (2.0f * dx);
     
-    // dB/dz
     field.getTotalField(x, y, z - dx, Bx1, By1, Bz1);
     field.getTotalField(x, y, z + dx, Bx2, By2, Bz2);
     B1 = std::sqrt(Bx1 * Bx1 + By1 * By1 + Bz1 * Bz1);
     B2 = std::sqrt(Bx2 * Bx2 + By2 * By2 + Bz2 * Bz2);
     float dBdz = (B2 - B1) / (2.0f * dx);
     
-    // Magnetic moment: μ = m·v_perp² / (2B)
     float v_perp_sq = vx * vx + vy * vy + vz * vz;
     float Bx0, By0, Bz0;
     field.getTotalField(x, y, z, Bx0, By0, Bz0);
@@ -232,7 +199,6 @@ inline void calculateMirrorForce3D(
     Fz = -mu * dBdz;
 }
 
-// Legacy 2D mirror force (wraps the 3D version)
 inline void calculateMirrorForce(
     float x, float y,
     float vx, float vy,
