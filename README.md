@@ -6,6 +6,14 @@ A comprehensive **3D volumetric simulation** of a Tokamak nuclear fusion reactor
 ![OpenGL](https://img.shields.io/badge/OpenGL-4.6-blue)
 ![Language](https://img.shields.io/badge/C++-17-blue)
 
+PROGRESS SO FAR:
+
+
+
+https://github.com/user-attachments/assets/cf4fcc6d-587e-4783-8f35-de0766aaf0fe
+
+
+
 ## OVERVIEW
 
 This project simulates the complex behavior of plasma within a tokamak reactor. Originally a 2D cross-sectional simulation, it has been upgraded to a full **3D volumetric experience**.
