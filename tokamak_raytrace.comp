@@ -1,0 +1,398 @@
+#version 430 core
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Output image
+layout(rgba8, binding = 0) uniform image2D outputImage;
+
+// ==================== UBO: Simulation state ====================
+layout(std140, binding = 0) uniform SimulationData {
+    mat4 invViewProj;
+    vec4 cameraPos;
+    vec4 torusParams;       // (majorR, minorR, opacity, time)
+    ivec4 counts;           // (numParticles, numFusionEvents, screenW, screenH)
+};
+
+// ==================== SSBOs ====================
+struct GPUParticle {
+    vec4 posRadius;
+    vec4 color;
+};
+
+struct FusionFlash {
+    vec4 posAge;       // xyz = position, w = age (0..1)
+    vec4 color;        // rgb = color, a = intensity
+};
+
+layout(std430, binding = 1) readonly buffer ParticleBuffer {
+    GPUParticle particles[];
+};
+
+layout(std430, binding = 2) readonly buffer FlashBuffer {
+    FusionFlash flashes[];
+};
+
+// ==================== CONSTANTS ====================
+const float MAX_DIST = 50.0;
+const int MAX_STEPS = 128;
+const float EPSILON = 0.001;
+const float PI = 3.14159265359;
+
+// ==================== NOISE FUNCTIONS ====================
+// Simple 3D hash for procedural noise (no texture needed)
+float hash31(vec3 p) {
+    p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+float noise3D(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f); // smoothstep
+
+    float a = hash31(i);
+    float b = hash31(i + vec3(1, 0, 0));
+    float c = hash31(i + vec3(0, 1, 0));
+    float d = hash31(i + vec3(1, 1, 0));
+    float e = hash31(i + vec3(0, 0, 1));
+    float f2 = hash31(i + vec3(1, 0, 1));
+    float g = hash31(i + vec3(0, 1, 1));
+    float h = hash31(i + vec3(1, 1, 1));
+
+    return mix(
+        mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+        mix(mix(e, f2, f.x), mix(g, h, f.x), f.y),
+        f.z
+    );
+}
+
+// Fractal Brownian Motion — layered noise
+float fbm(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * noise3D(p * frequency);
+        frequency *= 2.0;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+// ==================== SDF: Torus ====================
+float sdTorus(vec3 p, float R, float r) {
+    vec2 q = vec2(length(p.xz) - R, p.y);
+    return length(q) - r;
+}
+
+vec3 torusNormal(vec3 p, float R, float r) {
+    float e = 0.001;
+    float d = sdTorus(p, R, r);
+    return normalize(vec3(
+        sdTorus(p + vec3(e, 0, 0), R, r) - d,
+        sdTorus(p + vec3(0, e, 0), R, r) - d,
+        sdTorus(p + vec3(0, 0, e), R, r) - d
+    ));
+}
+
+// Distance from point to torus centerline ring (circle of radius R in XZ at y=0)
+float distToCenterline(vec3 p, float R) {
+    float rXZ = length(p.xz);
+    vec2 diff = vec2(rXZ - R, p.y);
+    return length(diff);
+}
+
+// ==================== Ray-Sphere Intersection ====================
+bool intersectSphere(vec3 ro, vec3 rd, vec3 center, float radius, out float t) {
+    vec3 oc = ro - center;
+    float a = dot(rd, rd);
+    float b = 2.0 * dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float disc = b * b - 4.0 * a * c;
+    if (disc < 0.0) return false;
+    float sqrtDisc = sqrt(disc);
+    float t0 = (-b - sqrtDisc) / (2.0 * a);
+    float t1 = (-b + sqrtDisc) / (2.0 * a);
+    if (t0 > 0.0) { t = t0; return true; }
+    if (t1 > 0.0) { t = t1; return true; }
+    return false;
+}
+
+// Intersect ray with a bounding sphere (for early-out optimization)
+bool intersectBoundingSphere(vec3 ro, vec3 rd, float R, float r, out float tNear, out float tFar) {
+    // Bounding sphere of torus: centered at origin, radius R + r
+    float boundR = R + r + 0.1;
+    vec3 oc = ro;
+    float a = dot(rd, rd);
+    float b = 2.0 * dot(oc, rd);
+    float c = dot(oc, oc) - boundR * boundR;
+    float disc = b * b - 4.0 * a * c;
+    if (disc < 0.0) return false;
+    float sqrtDisc = sqrt(disc);
+    tNear = (-b - sqrtDisc) / (2.0 * a);
+    tFar = (-b + sqrtDisc) / (2.0 * a);
+    if (tFar < 0.0) return false;
+    if (tNear < 0.0) tNear = 0.0;
+    return true;
+}
+
+// ==================== LIGHTING ====================
+vec3 lightDir = normalize(vec3(1.0, 1.5, 0.8));
+vec3 lightColor = vec3(1.0, 0.95, 0.9);
+vec3 ambientColor = vec3(0.05, 0.06, 0.1);
+
+vec3 shadeTorus(vec3 p, vec3 normal, vec3 rd) {
+    // Reactor shell: metallic gray-blue
+    vec3 baseColor = vec3(0.15, 0.18, 0.25);
+    float diff = max(dot(normal, lightDir), 0.0);
+    
+    // Fresnel rim — makes edges glow subtly
+    float fresnel = pow(1.0 - abs(dot(normal, -rd)), 4.0);
+    vec3 rim = vec3(0.1, 0.2, 0.4) * fresnel * 0.5;
+    
+    // Specular
+    vec3 refl = reflect(rd, normal);
+    float spec = pow(max(dot(refl, lightDir), 0.0), 64.0);
+    
+    vec3 color = baseColor * (ambientColor * 2.0 + lightColor * diff * 0.5) + spec * 0.2 + rim;
+    return color;
+}
+
+// ==================== PLASMA VOLUME ====================
+// Computes plasma emission color and density at a point inside the torus tube
+vec4 samplePlasma(vec3 p, float R, float r, float time, int numFlashes, int numParticles) {
+    float dCenter = distToCenterline(p, R);
+    if (dCenter > r) return vec4(0.0);
+    
+    // Normalized distance from centerline (0 at center, 1 at edge)
+    float t = dCenter / r;
+    
+    // Plasma density profile: peaked at center, falls off toward edge
+    // Use particle count to scale overall density (simulate 10000 particles as "full" density)
+    float densityScale = clamp(float(numParticles) / 5000.0, 0.2, 2.0);
+    
+    float density = max(0.0, 1.0 - t * t);
+    density = pow(density, 1.5); // Sharper core
+    
+    // Toroidal angle
+    float phi = atan(p.z, p.x);
+    // Poloidal angle
+    float rXZ = length(p.xz);
+    float theta = atan(p.y, rXZ - R);
+    
+    // Smoother turbulence - lower frequency
+    vec3 noiseCoord = p * 1.5 + vec3(time * 0.5, time * 0.2, -time * 0.3);
+    float turb = fbm(noiseCoord, 3); // Fewer octaves
+    
+    // Swirling flow
+    float flow = sin(phi * 3.0 + time * 2.0) * 0.5 + 0.5;
+    
+    // Modulate density with turbulence for "fluid" look
+    density *= (0.7 + 0.3 * turb);
+    density *= densityScale;
+    
+    // ---- Plasma color temperature (Yellow/Orange theme due to user request) ----
+    // Core: Bright White/Yellow
+    // Mid:  Orange/Gold
+    // Edge: Dark Orange/Red
+    vec3 coreColor = vec3(1.0, 1.0, 0.8);      // White-Yellow
+    vec3 midColor  = vec3(1.0, 0.6, 0.1);      // Orange-Gold
+    vec3 edgeColor = vec3(0.8, 0.1, 0.05);     // Red
+    
+    vec3 plasmaColor;
+    float tColor = t + turb * 0.1; // Perturb color gradient
+    
+    if (tColor < 0.4) {
+        plasmaColor = mix(coreColor, midColor, tColor / 0.4);
+    } else if (tColor < 0.8) {
+        plasmaColor = mix(midColor, edgeColor, (tColor - 0.4) / 0.4);
+    } else {
+        plasmaColor = edgeColor;
+    }
+    
+    // Make core self-illuminated
+    plasmaColor *= (1.5 + turb * 0.5);
+    
+    // Proximity to fusion flash events — heat blooms
+    for (int i = 0; i < numFlashes; i++) {
+        vec3 fPos = flashes[i].posAge.xyz;
+        float age = flashes[i].posAge.w;
+        if (age >= 1.0) continue;
+        
+        float dist = length(p - fPos);
+        // Larger heat radius for better blending
+        float heatRadius = 0.5 + age * 0.5;
+        
+        // Soft metaball falloff
+        float heat = max(0.0, 1.0 - dist / heatRadius);
+        heat = pow(heat, 1.5); 
+        heat *= (1.0 - age);
+        
+        // Add significant density so flashes look like part of the fluid
+        density += heat * 2.0; // Increase density around flashes
+        
+        // Flash color (Bright White-Yellow to match theme)
+        vec3 flashColor = vec3(1.0, 0.9, 0.7) * 4.0;
+        plasmaColor = mix(plasmaColor, flashColor, heat * 0.8);
+    }
+    
+    return vec4(plasmaColor, density);
+}
+
+// ==================== BACKGROUND ====================
+vec3 background(vec3 rd) {
+    float t = 0.5 * (rd.y + 1.0);
+    // Smooth dark gradient, REMOVED NOISY STARS
+    vec3 dark = vec3(0.002, 0.002, 0.005);
+    vec3 mid = vec3(0.01, 0.01, 0.02);
+    vec3 col = mix(dark, mid, t);
+    return col;
+}
+
+// ==================== MAIN RAY TRACE ====================
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    int screenW = counts.z;
+    int screenH = counts.w;
+    
+    if (gid.x >= screenW || gid.y >= screenH) return;
+    
+    // Generate ray
+    vec2 uv = (vec2(gid) + 0.5) / vec2(screenW, screenH);
+    uv = uv * 2.0 - 1.0;
+    uv.y = -uv.y;
+    
+    vec4 nearPoint = invViewProj * vec4(uv, -1.0, 1.0);
+    vec4 farPoint  = invViewProj * vec4(uv,  1.0, 1.0);
+    nearPoint /= nearPoint.w;
+    farPoint  /= farPoint.w;
+    
+    vec3 ro = cameraPos.xyz;
+    vec3 rd = normalize(farPoint.xyz - nearPoint.xyz);
+    
+    float majorR = torusParams.x;
+    float minorR = torusParams.y;
+    float torusOpacity = torusParams.z;
+    float time = torusParams.w;
+    
+    int numParticles = counts.x;
+    int numFlashes = counts.y;
+    
+    // ======== Early-out: bounding sphere test ========
+    float tBoundNear, tBoundFar;
+    bool hitsBound = intersectBoundingSphere(ro, rd, majorR, minorR, tBoundNear, tBoundFar);
+    
+    if (!hitsBound) {
+        // Ray misses entirely — just background
+        vec3 bg = background(rd);
+        bg = pow(bg, vec3(1.0 / 2.2)); // Simple gamma correction for background
+        imageStore(outputImage, gid, vec4(bg, 1.0));
+        return;
+    }
+    
+    // ======== PASS 1: Ray-march — torus shell + volumetric plasma ========
+    vec3 torusShellColor = vec3(0.0);
+    float torusShellAlpha = 0.0;
+    vec3 plasmaAccum = vec3(0.0);
+    float plasmaAlphaAccum = 0.0;
+    
+    float entryT = -1.0;
+    
+    {
+        float t = tBoundNear;
+        bool insideTorus = false;
+        bool hitShell = false;
+        
+        // March to find torus entry
+        for (int i = 0; i < MAX_STEPS; i++) {
+            vec3 p = ro + rd * t;
+            float d = sdTorus(p, majorR, minorR);
+            
+            if (d < EPSILON && !hitShell) {
+                // Hit the outer shell
+                vec3 normal = torusNormal(p, majorR, minorR);
+                torusShellColor = shadeTorus(p, normal, rd);
+                torusShellAlpha = torusOpacity;
+                hitShell = true;
+                entryT = t;
+                
+                // Step inside: push slightly past surface to avoid self-intersection
+                t += EPSILON * 3.0;
+                continue;
+            }
+            
+            if (hitShell && d < 0.0) {
+                // We're inside the torus tube — this is where plasma is
+                insideTorus = true;
+                break;
+            }
+            
+            if (t > tBoundFar) break;
+            if (hitShell) {
+                t += max(abs(d), 0.005);
+            } else {
+                t += d * 0.8;
+            }
+        }
+        
+        // ======== PASS 2: Volumetric plasma ray march inside the torus ========
+        if (insideTorus || hitShell) {
+            float tStart = max(entryT + EPSILON * 3.0, tBoundNear);
+            
+            float stepSize = minorR * 0.04; // Finer steps for quality
+            int plasmaSteps = 100;
+            float transmittance = 1.0;
+            
+            for (int j = 0; j < plasmaSteps; j++) {
+                float tSample = tStart + float(j) * stepSize;
+                if (tSample > tBoundFar) break;
+                
+                vec3 pSample = ro + rd * tSample;
+                float dSample = sdTorus(pSample, majorR, minorR);
+                
+                // Only sample inside the torus
+                if (dSample > 0.0) {
+                    if (entryT > 0.0 && tSample > entryT + minorR * 2.2) break; // Past exit (approx)
+                    continue;
+                }
+                
+                // Sample plasma at this point
+                vec4 plasma = samplePlasma(pSample, majorR, minorR, time, numFlashes, numParticles);
+                vec3 emitColor = plasma.rgb;
+                float density = plasma.a;
+                
+                // Absorption: Beer-Lambert law
+                float absorption = density * stepSize * 4.0; // Tuned for this density scale
+                float alpha = 1.0 - exp(-absorption);
+                
+                // Emission-absorption model
+                plasmaAccum += emitColor * alpha * transmittance;
+                transmittance *= (1.0 - alpha);
+                
+                if (transmittance < 0.01) break; // Fully opaque
+            }
+            
+            plasmaAlphaAccum = 1.0 - transmittance;
+        }
+    }
+    
+    // ======== COMPOSITE ========
+    vec3 bg = background(rd);
+    
+    // 1. Render the core (Plasma + Background)
+    vec3 coreColor = mix(bg, plasmaAccum, plasmaAlphaAccum);
+    
+    // Add extra emissive glow to the core (plasma is self-luminous)
+    coreColor += plasmaAccum * 0.5 * plasmaAlphaAccum;
+    
+    // 2. Render the shell (Container) on top of the core
+    vec3 finalColor = mix(coreColor, torusShellColor, torusShellAlpha);
+    
+    // HDR tone mapping
+    finalColor = finalColor * (2.51 * finalColor + 0.03) / (finalColor * (2.43 * finalColor + 0.59) + 0.14);
+    
+    // Gamma correction
+    finalColor = pow(clamp(finalColor, 0.0, 1.0), vec3(1.0 / 2.2));
+    
+    imageStore(outputImage, gid, vec4(finalColor, 1.0));
+}
