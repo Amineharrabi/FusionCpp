@@ -124,8 +124,8 @@ int main()
 
     PlasmaPhysics plasmaPhysics(magneticField, tokamak);
     
-    int numDeuterium = 4000;
-    int numTritium = 4000;
+    int numDeuterium = 4200;
+    int numTritium = 4200;
     std::vector<Particle> particles = plasmaPhysics.createThermalPlasma(numDeuterium, numTritium);
     
     std::cout << "Initial plasma: " << numDeuterium << " D + " << numTritium << " T = " 
@@ -148,7 +148,7 @@ int main()
     int fuelThreshold = 5000; 
     int fuelBatchSize = 1000;  
     float fuelCooldown = 0.0f;
-    float fuelCooldownTime = 0.5f; 
+    float fuelCooldownTime = 0.6f; 
     while (!glfwWindowShouldClose(window))
     {
         double currentTime = glfwGetTime();

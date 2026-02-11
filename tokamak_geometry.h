@@ -41,9 +41,8 @@ struct TokamakGeometry {
     }
 
    
-    float torusSDF(float x, float y, float z) const {
-        float dxz = std::sqrt(x * x + z * z) - torusMajorR;
-        return std::sqrt(dxz * dxz + y * y) - torusMinorR;
+  float distanceFromPlasmaEdge3D(float x, float y, float z) const {
+        return torusSDF(x, y, z);
     }
     
     
@@ -52,22 +51,13 @@ struct TokamakGeometry {
     }
     
     
-    float distanceFromPlasmaEdge3D(float x, float y, float z) const {
-        return torusSDF(x, y, z);
-    }
+    
 
-   
-    void torusNormal(float x, float y, float z, float& nx, float& ny, float& nz) const {
-        const float eps = 0.001f;
-        float d = torusSDF(x, y, z);
-        nx = torusSDF(x + eps, y, z) - d;
-        ny = torusSDF(x, y + eps, z) - d;
-        nz = torusSDF(x, y, z + eps) - d;
-        float len = std::sqrt(nx * nx + ny * ny + nz * nz) + 1e-10f;
-        nx /= len;
-        ny /= len;
-        nz /= len;
+  float torusSDF(float x, float y, float z) const {
+        float dxz = std::sqrt(x * x + z * z) - torusMajorR;
+        return std::sqrt(dxz * dxz + y * y) - torusMinorR;
     }
+   
     
    
     void projectToCenterline(float x, float y, float z,
@@ -84,6 +74,17 @@ struct TokamakGeometry {
         }
     }
 
+        void torusNormal(float x, float y, float z, float& nx, float& ny, float& nz) const {
+        const float eps = 0.001f;
+        float d = torusSDF(x, y, z);
+        nx = torusSDF(x + eps, y, z) - d;
+        ny = torusSDF(x, y + eps, z) - d;
+        nz = torusSDF(x, y, z + eps) - d;
+        float len = std::sqrt(nx * nx + ny * ny + nz * nz) + 1e-10f;
+        nx /= len;
+        ny /= len;
+        nz /= len;
+    }
     
     void generateCrossSection() {
         plasmaVertices.clear();
