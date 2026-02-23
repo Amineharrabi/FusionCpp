@@ -81,7 +81,10 @@ float fbm(vec3 p, int octaves) {
 
 // ==================== SDF: Torus ====================
 
-
+float sdTorus(vec3 p, float R, float r) {
+    vec2 q = vec2(length(p.xz) - R, p.y);
+    return length(q) - r;
+}
 vec3 torusNormal(vec3 p, float R, float r) {
     float e = 0.001;
     float d = sdTorus(p, R, r);
@@ -90,10 +93,6 @@ vec3 torusNormal(vec3 p, float R, float r) {
         sdTorus(p + vec3(0, e, 0), R, r) - d,
         sdTorus(p + vec3(0, 0, e), R, r) - d
     ));
-}
-float sdTorus(vec3 p, float R, float r) {
-    vec2 q = vec2(length(p.xz) - R, p.y);
-    return length(q) - r;
 }
 
 // Distance from point to torus centerline ring (circle of radius R in XZ at y=0)
