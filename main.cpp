@@ -1,5 +1,5 @@
 #include <glad/glad.h>
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -20,41 +20,49 @@
 #include "magnetic_field.h"
 #include "plasma_physics.h"
 #include "camera.h"
-#include "ray_tracing.cpp"  
+#include "ray_tracing.cpp"
 OrbitCamera g_camera;
 int g_windowWidth = 1200;
 int g_windowHeight = 800;
 
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) return;
-    
+void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.WantCaptureMouse)
+        return;
+
     double mx, my;
     glfwGetCursorPos(window, &mx, &my);
     g_camera.onMouseButton(button, action, mx, my);
 }
 
-void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) return;
-    
+void cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.WantCaptureMouse)
+        return;
+
     g_camera.onMouseMove(xpos, ypos);
 }
 
-void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse) return;
-    
+void scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+{
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.WantCaptureMouse)
+        return;
+
     g_camera.onScroll(yoffset);
 }
 
-void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+void framebufferSizeCallback(GLFWwindow *window, int width, int height)
+{
     g_windowWidth = width;
     g_windowHeight = height;
     glViewport(0, 0, width, height);
 }
 
-void fatalError(const char* msg) {
+void fatalError(const char *msg)
+{
     std::cerr << "FATAL ERROR: " << msg << std::endl;
     std::cout << "Press Enter to exit..." << std::endl;
     std::cin.get();
@@ -63,10 +71,11 @@ void fatalError(const char* msg) {
 
 int main()
 {
-    if (!glfwInit()) {
+    if (!glfwInit())
+    {
         fatalError("Failed to initialize GLFW");
     }
-    
+
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -74,15 +83,17 @@ int main()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    GLFWwindow* window = glfwCreateWindow(g_windowWidth, g_windowHeight, 
-                                           "Tokamak Fusion Reactor — 3D Ray Tracing", nullptr, nullptr);
-    if (!window) {
+    GLFWwindow *window = glfwCreateWindow(g_windowWidth, g_windowHeight,
+                                          "Tokamak Fusion Reactor — 3D Ray Tracing", nullptr, nullptr);
+    if (!window)
+    {
         glfwTerminate();
         fatalError("Failed to create GLFW window (OpenGL 4.3 required)");
     }
     glfwMakeContextCurrent(window);
-    
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
         fatalError("Failed to initialize GLAD");
     }
 
@@ -105,13 +116,15 @@ int main()
     glViewport(0, 0, g_windowWidth, g_windowHeight);
 
     GPURayTracer rayTracer;
-    if (!rayTracer.initialize(g_windowWidth, g_windowHeight)) {
+    if (!rayTracer.initialize(g_windowWidth, g_windowHeight))
+    {
         fatalError("Failed to initialize GPU ray tracer (check console for shader errors)");
     }
 
     std::cout << "\n============================================" << std::endl;
     std::cout << "TOKAMAK FUSION REACTOR — 3D SIMULATION" << std::endl;
-    std::cout << "============================================\n" << std::endl;
+    std::cout << "============================================\n"
+              << std::endl;
 
     TokamakGeometry tokamak;
     std::cout << "Torus geometry:" << std::endl;
@@ -119,16 +132,16 @@ int main()
     std::cout << "  Minor radius: " << tokamak.torusMinorR << std::endl;
 
     MagneticField magneticField(tokamak.torusMajorR, tokamak.torusMinorR, 8.0f);
-    std::cout << "Magnetic field: Bt=" << magneticField.B_toroidal 
+    std::cout << "Magnetic field: Bt=" << magneticField.B_toroidal
               << " T, Bp=" << magneticField.B_poloidal << " T" << std::endl;
 
     PlasmaPhysics plasmaPhysics(magneticField, tokamak);
-    
+
     int numDeuterium = 4200;
     int numTritium = 4200;
     std::vector<Particle> particles = plasmaPhysics.createThermalPlasma(numDeuterium, numTritium);
-    
-    std::cout << "Initial plasma: " << numDeuterium << " D + " << numTritium << " T = " 
+
+    std::cout << "Initial plasma: " << numDeuterium << " D + " << numTritium << " T = "
               << particles.size() << " particles" << std::endl;
     std::cout << "\nControls: LMB drag = orbit, Scroll = zoom, RMB drag = pan" << std::endl;
     std::cout << "Press Start Injection to begin fusion!" << std::endl;
@@ -142,26 +155,29 @@ int main()
     std::mt19937 uiRng(std::random_device{}());
 
     std::vector<FusionFlash> activeFlashes;
-    const float flashDuration = 2.5f; 
+    const float flashDuration = 2.5f;
 
     bool autoFuel = true;
-    int fuelThreshold = 5000; 
-    int fuelBatchSize = 1000;  
+    int fuelThreshold = 5000;
+    int fuelBatchSize = 1000;
     float fuelCooldown = 0.0f;
-    float fuelCooldownTime = 0.6f; 
+    float fuelCooldownTime = 0.6f;
     while (!glfwWindowShouldClose(window))
     {
         double currentTime = glfwGetTime();
         float deltaTime = static_cast<float>(currentTime - lastTime);
         lastTime = currentTime;
-        if (deltaTime > 0.033f) deltaTime = 0.033f;
+        if (deltaTime > 0.033f)
+            deltaTime = 0.033f;
 
         g_camera.update(deltaTime);
 
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
-        if (fbWidth != rayTracer.width || fbHeight != rayTracer.height) {
-            if (fbWidth > 0 && fbHeight > 0) {
+        if (fbWidth != rayTracer.width || fbHeight != rayTracer.height)
+        {
+            if (fbWidth > 0 && fbHeight > 0)
+            {
                 rayTracer.resize(fbWidth, fbHeight);
                 g_windowWidth = fbWidth;
                 g_windowHeight = fbHeight;
@@ -186,19 +202,25 @@ int main()
         float wallLoss = plasmaPhysics.getWallLossProbability();
         bool coulomb = plasmaPhysics.getEnableCoulomb();
 
-        if (!simulationRunning) {
+        if (!simulationRunning)
+        {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Status: PAUSED");
             ImGui::SliderFloat("Injection Kick", &injectionKick, 0.0f, 2.0f, "%.3f");
-            if (ImGui::Button("Start Injection")) {
+            if (ImGui::Button("Start Injection"))
+            {
                 std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * 3.14159f);
                 std::uniform_real_distribution<float> angleDist2(0.0f, 2.0f * 3.14159f);
-                for (auto& p : particles) {
-                    if (!p.active) continue;
-                    if (p.type != Particle::DEUTERIUM && p.type != Particle::TRITIUM) continue;
+                for (auto &p : particles)
+                {
+                    if (!p.active)
+                        continue;
+                    if (p.type != Particle::DEUTERIUM && p.type != Particle::TRITIUM)
+                        continue;
                     float a = angleDist(uiRng);
                     float b = angleDist2(uiRng);
                     float R = std::sqrt(p.x * p.x + p.z * p.z);
-                    if (R > 1e-6f) {
+                    if (R > 1e-6f)
+                    {
                         p.vx += injectionKick * (-p.z / R);
                         p.vz += injectionKick * (p.x / R);
                     }
@@ -206,13 +228,15 @@ int main()
                 }
                 simulationRunning = true;
             }
-        } else {
+        }
+        else
+        {
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "Status: RUNNING");
         }
 
         ImGui::Separator();
         ImGui::Text("--- Physics ---");
-        
+
         if (ImGui::SliderFloat("Time Scale", &timeScale, 1e-4f, 1.0f, "%.6f", ImGuiSliderFlags_Logarithmic))
             plasmaPhysics.setTimeScale(timeScale);
         if (ImGui::SliderFloat("Temperature (K)", &plasmaTemperature, 1e7f, 5e9f, "%.3e", ImGuiSliderFlags_Logarithmic))
@@ -235,19 +259,26 @@ int main()
         ImGui::Checkbox("Auto-Fuel", &autoFuel);
         ImGui::SliderInt("Fuel Threshold", &fuelThreshold, 10, 5000);
         ImGui::SliderInt("Fuel Batch Size", &fuelBatchSize, 10, 1000);
-        if (ImGui::Button("Manual Refuel")) {
+        if (ImGui::Button("Manual Refuel"))
+        {
             plasmaPhysics.injectFuel(particles, fuelBatchSize, fuelBatchSize);
             std::cout << "REFUELED: +" << fuelBatchSize << " D + " << fuelBatchSize << " T" << std::endl;
         }
 
         int activeD = 0, activeT = 0, heliumCount = 0, neutronCount = 0, totalActive = 0;
-        for (const auto& p : particles) {
-            if (!p.active) continue;
+        for (const auto &p : particles)
+        {
+            if (!p.active)
+                continue;
             totalActive++;
-            if (p.type == Particle::DEUTERIUM) activeD++;
-            else if (p.type == Particle::TRITIUM) activeT++;
-            else if (p.type == Particle::HELIUM) heliumCount++;
-            else if (p.type == Particle::NEUTRON) neutronCount++;
+            if (p.type == Particle::DEUTERIUM)
+                activeD++;
+            else if (p.type == Particle::TRITIUM)
+                activeT++;
+            else if (p.type == Particle::HELIUM)
+                heliumCount++;
+            else if (p.type == Particle::NEUTRON)
+                neutronCount++;
         }
 
         ImGui::Separator();
@@ -263,23 +294,29 @@ int main()
 
         ImGui::End();
 
-        if (simulationRunning) {
+        if (simulationRunning)
+        {
             int preFusionHe = heliumCount;
 
             plasmaPhysics.updateParticles(particles, deltaTime);
 
             int postFusionHe = 0;
-            for (const auto& p : particles) {
-                if (p.active && p.type == Particle::HELIUM) postFusionHe++;
+            for (const auto &p : particles)
+            {
+                if (p.active && p.type == Particle::HELIUM)
+                    postFusionHe++;
             }
 
             int newFusions = postFusionHe - preFusionHe;
-            if (newFusions > 0) {
+            if (newFusions > 0)
+            {
                 fusionCount += newFusions;
                 lastFusionTime = currentTime;
 
-                for (int i = (int)particles.size() - 1; i >= 0 && newFusions > 0; --i) {
-                    if (particles[i].active && particles[i].type == Particle::HELIUM) {
+                for (int i = (int)particles.size() - 1; i >= 0 && newFusions > 0; --i)
+                {
+                    if (particles[i].active && particles[i].type == Particle::HELIUM)
+                    {
                         FusionFlash flash;
                         flash.px = particles[i].x;
                         flash.py = particles[i].y;
@@ -299,46 +336,53 @@ int main()
                           << " Helium:" << postFusionHe << std::endl;
             }
 
-            if (autoFuel) {
+            if (autoFuel)
+            {
                 fuelCooldown -= deltaTime;
                 int curD = 0, curT = 0;
-                for (const auto& p : particles) {
-                    if (!p.active) continue;
-                    if (p.type == Particle::DEUTERIUM) curD++;
-                    else if (p.type == Particle::TRITIUM) curT++;
+                for (const auto &p : particles)
+                {
+                    if (!p.active)
+                        continue;
+                    if (p.type == Particle::DEUTERIUM)
+                        curD++;
+                    else if (p.type == Particle::TRITIUM)
+                        curT++;
                 }
-                if ((curD < fuelThreshold || curT < fuelThreshold) && fuelCooldown <= 0.0f) {
+                if ((curD < fuelThreshold || curT < fuelThreshold) && fuelCooldown <= 0.0f)
+                {
                     plasmaPhysics.injectFuel(particles, fuelBatchSize, fuelBatchSize);
                     fuelCooldown = fuelCooldownTime;
-                    std::cout << "autoFuel: +" << fuelBatchSize << " D + " << fuelBatchSize 
+                    std::cout << "autoFuel: +" << fuelBatchSize << " D + " << fuelBatchSize
                               << " T (D was " << curD << ", T was " << curT << ")" << std::endl;
                 }
             }
 
-            if (particles.size() > 15000) {
+            if (particles.size() > 15000)
+            {
                 particles.erase(
                     std::remove_if(particles.begin(), particles.end(),
-                                   [](const Particle& p) { return !p.active; }),
-                    particles.end()
-                );
+                                   [](const Particle &p)
+                                   { return !p.active; }),
+                    particles.end());
             }
         }
 
-        for (auto& flash : activeFlashes) {
+        for (auto &flash : activeFlashes)
+        {
             flash.age += deltaTime / flashDuration;
         }
         activeFlashes.erase(
             std::remove_if(activeFlashes.begin(), activeFlashes.end(),
-                           [](const FusionFlash& f) { return f.age >= 1.0f; }),
-            activeFlashes.end()
-        );
+                           [](const FusionFlash &f)
+                           { return f.age >= 1.0f; }),
+            activeFlashes.end());
 
-
-        std::vector<GPUParticle> gpuParticles; 
-
+        std::vector<GPUParticle> gpuParticles;
 
         std::vector<FusionFlash> gpuFlashes = activeFlashes;
-        if ((int)gpuFlashes.size() > GPURayTracer::MAX_FLASHES) {
+        if ((int)gpuFlashes.size() > GPURayTracer::MAX_FLASHES)
+        {
             gpuFlashes.resize(GPURayTracer::MAX_FLASHES);
         }
 
@@ -358,8 +402,7 @@ int main()
             (float)currentTime,
             gpuParticles,
             gpuFlashes,
-            totalActive
-        );
+            totalActive);
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -367,7 +410,8 @@ int main()
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
             glfwSetWindowShouldClose(window, true);
         }
     }
