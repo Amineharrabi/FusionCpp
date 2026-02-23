@@ -36,4 +36,6 @@ Makefile
 
 # Dependencies (if building locally)
 external/*/build/
-  
+build/*
+build-ubuntu/*
+.vscode/*
