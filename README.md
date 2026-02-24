@@ -94,7 +94,34 @@ The project now uses **CMake** for building.
     ./Release/FusionTokamakSim.exe
     ```
 
-*Note: The current `CMakeLists.txt` is configured with prebuilt libraries for Windows. Linux/macOS users may need to adjust the library paths or use system-installed packages for GLFW/GLM.*
+*Note: The current CMake setup supports Windows and Ubuntu. On Linux, dependencies are fetched automatically during CMake configure.*
+
+### Build Instructions (Ubuntu)
+
+The project can now be built directly on Ubuntu using CMake. Dependencies (`GLFW`, `GLAD`, `GLM`, `ImGui`) are fetched automatically during configure.
+
+1. Install required system packages:
+    ```bash
+    sudo apt update
+    sudo apt install -y build-essential cmake git pkg-config \
+      libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+      libwayland-dev libxkbcommon-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev
+    ```
+
+2. Configure and build:
+    ```bash
+    cmake -S . -B build-ubuntu
+    cmake --build build-ubuntu -j
+    ```
+
+3. Run:
+    ```bash
+    ./build-ubuntu/FusionTokamakSim
+    ```
+
+Notes:
+- First configure/build requires internet access for dependency download.
+- Requires an OpenGL 4.3+ capable GPU/driver for compute shaders.
 
 ## PHYSICS DOCUMENTATION
 
