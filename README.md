@@ -13,6 +13,9 @@ PROGRESS SO FAR:
 https://github.com/user-attachments/assets/cf4fcc6d-587e-4783-8f35-de0766aaf0fe
 
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/image?repos=Amineharrabi/FusionCpp&type=timeline&legend=bottom-right)](https://www.star-history.com/?repos=Amineharrabi%2FFusionCpp&type=timeline&legend=bottom-right)
 
 ## OVERVIEW
 
